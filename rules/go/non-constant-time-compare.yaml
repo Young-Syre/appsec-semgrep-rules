@@ -60,8 +60,19 @@ rules:
       - pattern-not: $X != nil
       - pattern-not: $X == ""
       - pattern-not: $X != ""
-      - pattern-not: $X == 0
-      - pattern-not: $X != 0
+      # `$X == 0` exists to let through length and count comparisons, but it
+      # also swallowed `bytes.Compare(expectedMAC, providedMAC) == 0` -- the
+      # common idiom for exactly the comparison this rule is about. The
+      # suppressor no longer applies when the operand is a bytes.Compare call.
+      - pattern-not:
+          patterns:
+            - pattern-either:
+                - pattern: $X == 0
+                - pattern: $X != 0
+            - pattern-not: bytes.Compare(...) == 0
+            - pattern-not: bytes.Compare(...) != 0
+            - pattern-not: 0 == bytes.Compare(...)
+            - pattern-not: 0 != bytes.Compare(...)
       - pattern-not: len(...) == $X
       - pattern-not: len(...) != $X
       - pattern-not: $X == len(...)

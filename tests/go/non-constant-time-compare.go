@@ -80,3 +80,25 @@ func signaturePresent(providedSig string) bool {
 	// ok: non-constant-time-secret-compare
 	return providedSig == ""
 }
+
+// `bytes.Compare(a, b) == 0` is the common idiom for exactly the comparison
+// this rule is about, and the `$X == 0` exclusion -- there to let length and
+// count comparisons through -- swallowed it.
+func verifyWithCompare(expectedMAC, providedMAC []byte) bool {
+	// ruleid: non-constant-time-secret-compare
+	return bytes.Compare(expectedMAC, providedMAC) == 0
+}
+
+func rejectWithCompare(expectedMAC, providedMAC []byte) bool {
+	// ruleid: non-constant-time-secret-compare
+	if bytes.Compare(expectedMAC, providedMAC) != 0 {
+		return false
+	}
+	return true
+}
+
+// A genuine length check must stay quiet.
+func hasMac(macBytes []byte) bool {
+	// ok: non-constant-time-secret-compare
+	return len(macBytes) == 0
+}
