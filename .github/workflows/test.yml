@@ -1,0 +1,41 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Pinned deliberately: Semgrep's matching engine changes between releases, and
+  # a ruleset whose tests pass on a moving target is not a tested ruleset.
+  SEMGREP_VERSION: "1.164.0"
+
+jobs:
+  rules:
+    name: validate and test rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep ${{ env.SEMGREP_VERSION }}
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "semgrep==${SEMGREP_VERSION}" "pyyaml>=6"
+          semgrep --version
+
+      - name: Validate rule syntax and metadata
+        run: semgrep --validate --config rules/
+
+      - name: Lint rule metadata
+        run: python3 scripts/lint_metadata.py rules
+
+      - name: Run fixture suite
+        run: semgrep --test --config rules/ tests/
