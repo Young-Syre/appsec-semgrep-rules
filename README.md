@@ -246,11 +246,21 @@ is not mistaken for a clean one:
   from a date formatter, and guessing would mean a finding in every Express
   codebase. Audit hand-written helper objects passed into template contexts
   yourself.
-- **`postmessage-handler-missing-origin-check` treats any mention of `.origin` as
-  a check.** `event.origin.startsWith('https://example.com')` passes the rule and
-  is still exploitable, because an attacker registers
-  `example.com.evil.net`. The rule finds handlers with *no* origin check at all;
-  reviewing the checks that exist is a separate pass.
+- **`postmessage-handler-missing-origin-check` only recognises an `if` on the
+  event's origin as a check.** `if (event.origin !== ALLOWED) return;` and
+  `if (!ALLOWED.includes(event.origin)) return;` both count. A check written
+  some other way — a boolean assigned first, a helper called — is not
+  recognised, and the handler is reported anyway; that is a false positive a
+  reader can dismiss in a second, which is the direction to err in.
+
+  The check is structural rather than textual on purpose. Testing the handler's
+  source text for `.origin` meant a comment reading
+  `// TODO: validate event.origin` suppressed the finding entirely.
+
+  Within the checks it does recognise it is still only asking whether one
+  exists. `event.origin.startsWith('https://example.com')` passes, and is still
+  exploitable, because an attacker registers `example.com.evil.net`. Reviewing
+  the checks that exist is a separate pass.
 
 Suppress an individual finding with `// nosemgrep: <rule-id>` and a reason, or
 drop a rule from a scan with `--exclude-rule <rule-id>`. If a rule is wrong in a
