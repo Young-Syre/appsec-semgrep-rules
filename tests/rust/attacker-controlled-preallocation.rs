@@ -115,3 +115,21 @@ fn copy_payload(payload: &[u8]) -> Vec<u8> {
     out.copy_from_slice(payload);
     out
 }
+
+// A protocol maximum is idiomatically an associated or module constant, and the
+// `$MAX` regex accepted a bare `MAX_FRAME` but not a path-qualified one -- so
+// the bound was invisible and a correctly-capped allocation was reported.
+pub struct PathQualified;
+
+impl PathQualified {
+    const MAX_FRAME: usize = 4096;
+
+    pub fn read_assoc(&self, hdr: [u8; 4]) -> Vec<u8> {
+        let n = u32::from_be_bytes(hdr) as usize;
+        if n > Self::MAX_FRAME {
+            return Vec::new();
+        }
+        // ok: attacker-controlled-preallocation
+        Vec::with_capacity(n)
+    }
+}

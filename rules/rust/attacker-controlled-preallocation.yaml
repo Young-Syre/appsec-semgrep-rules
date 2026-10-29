@@ -79,7 +79,7 @@ rules:
                         fn $FN(...) { ... if $MAX <= $A { ... } ... }
                 - metavariable-regex:
                     metavariable: $MAX
-                    regex: ^([0-9][0-9_]*(usize|u16|u32|u64)?|[A-Z][A-Z0-9_]*)$
+                    regex: ^((?:[A-Za-z_][A-Za-z0-9_]*::)*[A-Z][A-Z0-9_]*|[0-9][0-9_]*(usize|u16|u32|u64)?)$
 
   - id: attacker-controlled-preallocation-vec-macro
     languages: [rust]
@@ -126,6 +126,7 @@ rules:
           - pattern: vec![0u64; $N]
           - pattern: vec![0; $N as usize]
           - pattern: vec![0u8; $N as usize]
+          - pattern: vec![0i8; $N as usize]
           - pattern: vec![0u16; $N as usize]
           - pattern: vec![0u32; $N as usize]
           - pattern: vec![0u64; $N as usize]
@@ -165,7 +166,7 @@ rules:
                     fn $FN(...) { ... if $MAX <= $A { ... } ... }
             - metavariable-regex:
                 metavariable: $MAX
-                regex: ^([0-9][0-9_]*(usize|u16|u32|u64)?|[A-Z][A-Z0-9_]*)$
+                regex: ^((?:[A-Za-z_][A-Za-z0-9_]*::)*[A-Z][A-Z0-9_]*|[0-9][0-9_]*(usize|u16|u32|u64)?)$
       - pattern-not-inside: |
           fn $FN(...) { ... let $V = <... $X.min(...) ...>; ... }
       - pattern-not-inside: |
@@ -174,3 +175,5 @@ rules:
           fn $FN(...) { ... let $V = <... cmp::min(...) ...>; ... }
       - pattern-not-inside: |
           fn $FN(...) { ... let $V = <... std::cmp::min(...) ...>; ... }
+      - pattern-not-inside: |
+          fn $FN(...) { ... let $V = <... core::cmp::min(...) ...>; ... }
