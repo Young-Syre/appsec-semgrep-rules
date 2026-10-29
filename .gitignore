@@ -1,0 +1,21 @@
+# Semgrep
+.semgrep/
+.semgrep_logs/
+*.sarif
+semgrep-results.json
+
+# Python tooling used for linting the YAML
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
