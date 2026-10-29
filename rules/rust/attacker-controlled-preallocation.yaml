@@ -1,0 +1,176 @@
+rules:
+  - id: attacker-controlled-preallocation
+    mode: taint
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      A length decoded from the wire reaches an allocation without being capped
+      first. A four-byte length prefix lets a peer ask for up to 4 GiB from a
+      sixteen-byte request, so a single connection can drive a multi-megabyte or
+      multi-gigabyte reservation and a handful of concurrent connections exhaust the
+      process before any payload is actually sent — the attacker never has to send
+      the bytes the header promises. Cap the value against a protocol maximum before
+      allocating (`let n = n.min(MAX_FRAME)`, or reject the frame outright), or drop
+      the pre-allocation and grow the buffer as bytes genuinely arrive with
+      `Read::take(limit)` and `read_to_end`.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-789: Memory Allocation with Excessive Size Value"
+      confidence: HIGH
+      impact: MEDIUM
+      likelihood: HIGH
+      subcategory:
+        - vuln
+      technology:
+        - rust
+        - protocol
+      references:
+        - https://cwe.mitre.org/data/definitions/789.html
+        - https://cwe.mitre.org/data/definitions/400.html
+        - https://doc.rust-lang.org/std/io/trait.Read.html#method.take
+    pattern-sources:
+      - pattern-either:
+          - pattern: $T::from_be_bytes(...)
+          - pattern: $T::from_le_bytes(...)
+          - pattern: $T::from_ne_bytes(...)
+          - pattern: $R.read_u16::<$O>()
+          - pattern: $R.read_u32::<$O>()
+          - pattern: $R.read_u64::<$O>()
+          - pattern: $R.read_uint::<$O>(...)
+          - pattern: $R.read_u16()
+          - pattern: $R.read_u32()
+          - pattern: $R.read_u64()
+          - pattern: $E::read_u16(...)
+          - pattern: $E::read_u32(...)
+          - pattern: $E::read_u64(...)
+          - pattern: $B.get_u16()
+          - pattern: $B.get_u32()
+          - pattern: $B.get_u64()
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: $X.min(...)
+          - pattern: $X.clamp(...)
+          - pattern: cmp::min(...)
+          - pattern: std::cmp::min(...)
+          - pattern: core::cmp::min(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: Vec::with_capacity($N)
+              - pattern: Vec::<$T>::with_capacity($N)
+              - pattern: String::with_capacity($N)
+              - pattern: BytesMut::with_capacity($N)
+              - pattern: HashMap::with_capacity($N)
+              - pattern: HashSet::with_capacity($N)
+              - pattern: $V.reserve($N)
+              - pattern: $V.reserve_exact($N)
+              - pattern: $V.resize($N, ...)
+          - pattern-not-inside:
+              patterns:
+                - pattern-either:
+                    - pattern: |
+                        fn $FN(...) { ... if $A > $MAX { ... } ... }
+                    - pattern: |
+                        fn $FN(...) { ... if $A >= $MAX { ... } ... }
+                    - pattern: |
+                        fn $FN(...) { ... if $MAX < $A { ... } ... }
+                    - pattern: |
+                        fn $FN(...) { ... if $MAX <= $A { ... } ... }
+                - metavariable-regex:
+                    metavariable: $MAX
+                    regex: ^([0-9][0-9_]*(usize|u16|u32|u64)?|[A-Z][A-Z0-9_]*)$
+
+  - id: attacker-controlled-preallocation-vec-macro
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      This `vec![0; n]` zero-fills a buffer whose length came off the wire in this
+      same function, with no cap between the two. The allocation is eager and
+      touched, so a four-byte length prefix turns into a multi-megabyte write per
+      connection and the cost is paid before a single payload byte is validated.
+      Cap the length against a protocol maximum first, or read incrementally with
+      `Read::take(limit)`. This rule is function-scoped rather than dataflow-based,
+      because Semgrep does not trace taint through macro arguments; it fires only
+      when the enclosing function both decodes a length and performs no bounds
+      check against a constant.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-789: Memory Allocation with Excessive Size Value"
+      confidence: MEDIUM
+      impact: MEDIUM
+      likelihood: MEDIUM
+      subcategory:
+        - audit
+      technology:
+        - rust
+        - protocol
+      references:
+        - https://cwe.mitre.org/data/definitions/789.html
+        - https://doc.rust-lang.org/std/macro.vec.html
+      note: >-
+        Heuristic and function-scoped, because Semgrep does not trace taint
+        through macro arguments. There is no dataflow link between the decoded
+        length and this allocation: the rule only knows that the same function
+        does both and caps neither. A bound check against a constant anywhere in
+        the function suppresses the finding, even one that does not guard this
+        allocation, and a cap applied in a different function is invisible.
+    patterns:
+      - pattern-either:
+          - pattern: vec![0; $N]
+          - pattern: vec![0u8; $N]
+          - pattern: vec![0i8; $N]
+          - pattern: vec![0u16; $N]
+          - pattern: vec![0u32; $N]
+          - pattern: vec![0u64; $N]
+          - pattern: vec![0; $N as usize]
+          - pattern: vec![0u8; $N as usize]
+          - pattern: vec![0u16; $N as usize]
+          - pattern: vec![0u32; $N as usize]
+          - pattern: vec![0u64; $N as usize]
+      - metavariable-regex:
+          metavariable: $N
+          regex: ^[A-Za-z_][A-Za-z0-9_.]*$
+      - pattern-inside:
+          patterns:
+            - pattern: |
+                fn $FN(...) { ... let $V = <... $SRC ...>; ... }
+            - metavariable-pattern:
+                metavariable: $SRC
+                pattern-either:
+                  - pattern: $T::from_be_bytes(...)
+                  - pattern: $T::from_le_bytes(...)
+                  - pattern: $T::from_ne_bytes(...)
+                  - pattern: $R.read_u16::<$O>()
+                  - pattern: $R.read_u32::<$O>()
+                  - pattern: $R.read_u64::<$O>()
+                  - pattern: $R.read_uint::<$O>(...)
+                  - pattern: $E::read_u16(...)
+                  - pattern: $E::read_u32(...)
+                  - pattern: $E::read_u64(...)
+                  - pattern: $B.get_u16()
+                  - pattern: $B.get_u32()
+                  - pattern: $B.get_u64()
+      - pattern-not-inside:
+          patterns:
+            - pattern-either:
+                - pattern: |
+                    fn $FN(...) { ... if $A > $MAX { ... } ... }
+                - pattern: |
+                    fn $FN(...) { ... if $A >= $MAX { ... } ... }
+                - pattern: |
+                    fn $FN(...) { ... if $MAX < $A { ... } ... }
+                - pattern: |
+                    fn $FN(...) { ... if $MAX <= $A { ... } ... }
+            - metavariable-regex:
+                metavariable: $MAX
+                regex: ^([0-9][0-9_]*(usize|u16|u32|u64)?|[A-Z][A-Z0-9_]*)$
+      - pattern-not-inside: |
+          fn $FN(...) { ... let $V = <... $X.min(...) ...>; ... }
+      - pattern-not-inside: |
+          fn $FN(...) { ... let $V = <... $X.clamp(...) ...>; ... }
+      - pattern-not-inside: |
+          fn $FN(...) { ... let $V = <... cmp::min(...) ...>; ... }
+      - pattern-not-inside: |
+          fn $FN(...) { ... let $V = <... std::cmp::min(...) ...>; ... }
