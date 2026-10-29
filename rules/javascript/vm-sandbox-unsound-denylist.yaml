@@ -1,0 +1,126 @@
+rules:
+  - id: vm-sandbox-denylist-missing-realm-escape-module
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      This module denylist blocks obviously dangerous builtins but leaves at least
+      one realm-escape module reachable. `vm`, `module`, `repl`, `inspector` and
+      `worker_threads` each hand the caller a fresh execution context or a loader
+      that runs in the host realm, so sandboxed code that can require any one of
+      them can re-enter the host and then require everything the denylist was
+      protecting. A denylist that omits them is equivalent to no denylist at all.
+      Prefer an allowlist of the handful of modules the sandbox genuinely needs; if
+      a denylist must stay, it has to include every module that yields a new realm
+      or a loader.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-693: Protection Mechanism Failure"
+      confidence: MEDIUM
+      impact: HIGH
+      likelihood: MEDIUM
+      subcategory:
+        - audit
+      technology:
+        - javascript
+        - typescript
+        - nodejs
+        - sandbox
+      references:
+        - https://cwe.mitre.org/data/definitions/693.html
+        - https://nodejs.org/api/vm.html#vm-executing-javascript
+        - https://github.com/patriksimek/vm2/issues/533
+    patterns:
+      - pattern-either:
+          # The assignment form matches const/let/var declarations, plain
+          # reassignment and member assignment alike, so one branch per shape of
+          # the value is enough and nothing is reported twice.
+          - pattern: $NAME = new Set($MODULES)
+          - pattern: $NAME = $MODULES
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i)^.*(block|deny|forbid|disallow|ban|restrict|unsafe|blacklist|prohibit).*$
+      - metavariable-regex:
+          metavariable: $MODULES
+          regex: (?s)^\[.*\b(child_process|fs|net|http|https|dgram|cluster|process|os)\b.*\]$
+      - metavariable-regex:
+          metavariable: $MODULES
+          regex: (?s)^(?!(?=.*\bvm\b)(?=.*\bmodule\b)(?=.*\brepl\b)(?=.*\binspector\b)(?=.*\bworker_threads\b)).*$
+
+  - id: vm-sandbox-denylist-missing-node-prefix-alias
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      This module denylist blocks a builtin by its bare name but not by its
+      `node:`-prefixed alias. Node resolves `require("fs")` and
+      `require("node:fs")` to the same builtin, and a string denylist compares the
+      specifier as written, so the prefixed form walks straight past the check.
+      Normalise the specifier before testing it — strip a leading `node:` and
+      lowercase it — or list both spellings for every entry.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-184: Incomplete List of Disallowed Inputs"
+      confidence: HIGH
+      impact: HIGH
+      likelihood: HIGH
+      subcategory:
+        - audit
+      technology:
+        - javascript
+        - typescript
+        - nodejs
+        - sandbox
+      references:
+        - https://cwe.mitre.org/data/definitions/184.html
+        - https://nodejs.org/api/modules.html#core-modules
+    patterns:
+      - pattern-either:
+          # The assignment form matches const/let/var declarations, plain
+          # reassignment and member assignment alike, so one branch per shape of
+          # the value is enough and nothing is reported twice.
+          - pattern: $NAME = new Set($MODULES)
+          - pattern: $NAME = $MODULES
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i)^.*(block|deny|forbid|disallow|ban|restrict|unsafe|blacklist|prohibit).*$
+      - metavariable-regex:
+          metavariable: $MODULES
+          regex: '(?s)^\[(?:(?=.*[''"]child_process[''"])(?!.*node:child_process)|(?=.*[''"]fs[''"])(?!.*node:fs)|(?=.*[''"]net[''"])(?!.*node:net)|(?=.*[''"]os[''"])(?!.*node:os)|(?=.*[''"]vm[''"])(?!.*node:vm)|(?=.*[''"]module[''"])(?!.*node:module)|(?=.*[''"]repl[''"])(?!.*node:repl)|(?=.*[''"]inspector[''"])(?!.*node:inspector)|(?=.*[''"]worker_threads[''"])(?!.*node:worker_threads)).*\]$'
+
+  - id: vm-run-in-this-context-untrusted-code
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      `runInThisContext` compiles and runs the supplied code in the *calling*
+      realm, so it has the host's `global`, the host's `require` and the host's
+      prototypes. There is no sandbox to escape from. If any part of this code
+      string is attacker-influenced this is direct remote code execution. Use
+      `vm.runInNewContext` or `vm.createContext` with an explicitly built context
+      object, and treat even that as a defence-in-depth measure rather than a
+      security boundary — the Node `vm` module is not a sandbox.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"
+      confidence: MEDIUM
+      impact: HIGH
+      likelihood: MEDIUM
+      subcategory:
+        - vuln
+      technology:
+        - javascript
+        - typescript
+        - nodejs
+        - sandbox
+      references:
+        - https://cwe.mitre.org/data/definitions/95.html
+        - https://nodejs.org/api/vm.html#vmruninthiscontextcode-options
+    patterns:
+      - pattern-either:
+          - pattern: $VM.runInThisContext($CODE, ...)
+          - pattern: $VM.$SCRIPT.runInThisContext(...)
+      - pattern-not: $VM.runInThisContext("...", ...)
+      - metavariable-regex:
+          metavariable: $VM
+          regex: (?i)^.*vm.*$
