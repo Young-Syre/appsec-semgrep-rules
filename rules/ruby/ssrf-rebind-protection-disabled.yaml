@@ -1,0 +1,42 @@
+rules:
+  - id: ssrf-rebind-protection-disabled
+    languages: [ruby]
+    severity: ERROR
+    message: >-
+      This HTTP request explicitly turns off the client's SSRF/DNS-rebinding
+      protection. That protection exists because validating a hostname and then
+      connecting to it are two separate DNS lookups: an attacker who controls the
+      authoritative zone can answer the first lookup with a public address and the
+      second with 127.0.0.1 or 169.254.169.254. Disabling it reintroduces that
+      TOCTOU window, so any user-supplied URL reaching this call can reach loopback,
+      link-local metadata and internal services. Remove the option and let the
+      client resolve the host once, then connect to the already-validated IP.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+      impact: HIGH
+      likelihood: HIGH
+      subcategory:
+        - vuln
+      technology:
+        - ruby
+        - rails
+        - http
+      references:
+        - https://cwe.mitre.org/data/definitions/918.html
+        - https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/
+        - https://portswigger.net/web-security/ssrf
+    patterns:
+      - pattern-either:
+          - pattern: "$OBJ.$METH(..., dns_rebind_protection: false, ...)"
+          - pattern: "$OBJ.$METH(..., allow_local_requests: true, ...)"
+          - pattern: "$OBJ.$METH(..., allow_localhost: true, ...)"
+          - pattern: "$OBJ.$METH(..., allow_local_network: true, ...)"
+          - pattern: "$OBJ.$METH(..., { dns_rebind_protection: false }, ...)"
+          - pattern: "$OBJ.$METH(..., { allow_local_requests: true }, ...)"
+          - pattern: "$OBJ.$METH(..., { allow_localhost: true }, ...)"
+      - metavariable-regex:
+          metavariable: $METH
+          regex: ^(get|post|put|patch|delete|head|options|request|perform_request|try_get|fetch|download)$
