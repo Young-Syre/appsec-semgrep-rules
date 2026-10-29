@@ -1,0 +1,88 @@
+rules:
+  - id: non-constant-time-secret-compare
+    languages: [go]
+    severity: WARNING
+    message: >-
+      This compares what looks like a secret, MAC, signature or token with a
+      short-circuiting comparison. `==`, `!=`, `bytes.Equal` and
+      `strings.EqualFold` all return as soon as they find a differing byte, so the
+      time they take is a function of how many leading bytes matched, and an
+      attacker who can retry can recover the expected value one byte at a time.
+      Use `crypto/subtle.ConstantTimeCompare` on equal-length byte slices, or
+      `hmac.Equal` when comparing MACs. One honest caveat on severity: when the
+      value being compared is an HMAC over request-bound data, the attacker
+      recovers only that one request's signature, not the signing key — still a
+      defect worth fixing, but far less serious than a timing leak on a long-lived
+      secret such as an API key or session token, where recovery is total.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-208: Observable Timing Discrepancy"
+      confidence: MEDIUM
+      impact: MEDIUM
+      likelihood: MEDIUM
+      subcategory:
+        - audit
+      technology:
+        - go
+        - crypto
+      references:
+        - https://cwe.mitre.org/data/definitions/208.html
+        - https://pkg.go.dev/crypto/subtle#ConstantTimeCompare
+        - https://pkg.go.dev/crypto/hmac#Equal
+      note: >-
+        Heuristic and name-driven: whether a comparison is reported depends on
+        whether either operand is *named* like a secret. Expect it to match
+        identifiers such as `macAddress` or `tokenizer`, and to miss a secret held
+        in a variable whose name does not say so. Treat a finding as a prompt to
+        read the comparison, not as a confirmed timing oracle.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: $A == $B
+                  - pattern: $A != $B
+                  - pattern: bytes.Equal($A, $B)
+                  - pattern: strings.EqualFold($A, $B)
+              - metavariable-regex:
+                  metavariable: $A
+                  regex: '^(?:sig|mac|tag|otp)$|^.*(?:(?i:hmac|signature|digest|token|secret|api[_-]?key|password|passwd|csrf|checksum|auth[_-]?tag|nonce)|Mac|MAC|Sig|SIG)'
+          - patterns:
+              - pattern-either:
+                  - pattern: $A == $B
+                  - pattern: $A != $B
+                  - pattern: bytes.Equal($A, $B)
+                  - pattern: strings.EqualFold($A, $B)
+              - metavariable-regex:
+                  metavariable: $B
+                  regex: '^(?:sig|mac|tag|otp)$|^.*(?:(?i:hmac|signature|digest|token|secret|api[_-]?key|password|passwd|csrf|checksum|auth[_-]?tag|nonce)|Mac|MAC|Sig|SIG)'
+      - pattern-not: $X == nil
+      - pattern-not: $X != nil
+      - pattern-not: $X == ""
+      - pattern-not: $X != ""
+      - pattern-not: $X == 0
+      - pattern-not: $X != 0
+      - pattern-not: len(...) == $X
+      - pattern-not: len(...) != $X
+      - pattern-not: $X == len(...)
+      - pattern-not: $X != len(...)
+      - pattern-not: subtle.ConstantTimeCompare(...) == $X
+      - pattern-not: subtle.ConstantTimeCompare(...) != $X
+      - pattern-not: $X == subtle.ConstantTimeCompare(...)
+      - pattern-not: $X != subtle.ConstantTimeCompare(...)
+      - pattern-not:
+          patterns:
+            - pattern-either:
+                - pattern: $A == $B
+                - pattern: $A != $B
+            - metavariable-regex:
+                metavariable: $B
+                regex: ^(?:err|Err[A-Z].*|[a-zA-Z_]*Err(?:or)?)$
+      - pattern-not:
+          patterns:
+            - pattern-either:
+                - pattern: $A == $B
+                - pattern: $A != $B
+            - metavariable-regex:
+                metavariable: $A
+                regex: ^(?:err|Err[A-Z].*|[a-zA-Z_]*Err(?:or)?)$
