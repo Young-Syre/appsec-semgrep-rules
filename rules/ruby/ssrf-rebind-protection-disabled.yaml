@@ -37,6 +37,7 @@ rules:
           - pattern: "$OBJ.$METH(..., { dns_rebind_protection: false }, ...)"
           - pattern: "$OBJ.$METH(..., { allow_local_requests: true }, ...)"
           - pattern: "$OBJ.$METH(..., { allow_localhost: true }, ...)"
+          - pattern: "$OBJ.$METH(..., { allow_local_network: true }, ...)"
       - metavariable-regex:
           metavariable: $METH
           regex: ^(get|post|put|patch|delete|head|options|request|perform_request|try_get|fetch|download)$

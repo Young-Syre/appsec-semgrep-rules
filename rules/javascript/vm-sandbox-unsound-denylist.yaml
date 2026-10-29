@@ -37,6 +37,9 @@ rules:
           # the value is enough and nothing is reported twice.
           - pattern: $NAME = new Set($MODULES)
           - pattern: $NAME = $MODULES
+          # A frozen denylist is, if anything, more likely to be a real one.
+          - pattern: $NAME = Object.freeze($MODULES)
+          - pattern: $NAME = new Set(Object.freeze($MODULES))
       - metavariable-regex:
           metavariable: $NAME
           regex: (?i)^.*(block|deny|forbid|disallow|ban|restrict|unsafe|blacklist|prohibit).*$
@@ -81,6 +84,9 @@ rules:
           # the value is enough and nothing is reported twice.
           - pattern: $NAME = new Set($MODULES)
           - pattern: $NAME = $MODULES
+          # A frozen denylist is, if anything, more likely to be a real one.
+          - pattern: $NAME = Object.freeze($MODULES)
+          - pattern: $NAME = new Set(Object.freeze($MODULES))
       - metavariable-regex:
           metavariable: $NAME
           regex: (?i)^.*(block|deny|forbid|disallow|ban|restrict|unsafe|blacklist|prohibit).*$
@@ -119,6 +125,18 @@ rules:
     patterns:
       - pattern-either:
           - pattern: $VM.runInThisContext($CODE, ...)
+          # `vm.Script#runInThisContext([options])` takes no code argument, so
+          # the branch above cannot match it. The compiled-script form is the
+          # one a real sandbox uses, and it was reachable only through
+          # `$VM.$SCRIPT.runInThisContext(...)` -- a two-level member receiver
+          # whose first segment has to be named like a vm, which
+          # `const s = new vm.Script(src); s.runInThisContext()` is not.
+          - pattern: new $VM.Script($CODE, ...).runInThisContext(...)
+          - patterns:
+              - pattern: $S.runInThisContext(...)
+              - pattern-inside: |
+                  $S = new $VM.Script(...);
+                  ...
           - pattern: $VM.$SCRIPT.runInThisContext(...)
       - pattern-not: $VM.runInThisContext("...", ...)
       - metavariable-regex:

@@ -103,7 +103,48 @@ function sandboxed(src) {
   return vm.runInContext(src, context, { timeout: 50 });
 }
 
+// `vm.Script#runInThisContext([options])` takes no code argument, so the
+// branch requiring one cannot match it, and the two-level-member branch needs
+// a receiver whose first segment is named like a vm. The compiled-script form
+// is what a real sandbox uses, and none of these were covered.
+function evalCompiledScript(src) {
+  const script = new vm.Script(src);
+  // ruleid: vm-run-in-this-context-untrusted-code
+  return script.runInThisContext();
+}
+
+function evalCompiledInline(src) {
+  // ruleid: vm-run-in-this-context-untrusted-code
+  return new vm.Script(src).runInThisContext();
+}
+
+function evalCompiledWithOptions(src) {
+  const s = new vm.Script(src);
+  // ruleid: vm-run-in-this-context-untrusted-code
+  return s.runInThisContext({ timeout: 10 });
+}
+
+// A frozen denylist is, if anything, more likely to be a real one. Both
+// denylist rules bound the array through `$NAME = $MODULES` or
+// `new Set($MODULES)` and required it to be a literal array, so wrapping it in
+// Object.freeze made it invisible to both.
+// ruleid: vm-sandbox-denylist-missing-node-prefix-alias
+const FROZEN_BLOCKED = Object.freeze([
+  'fs',
+  'child_process',
+  'net',
+  'vm',
+  'module',
+  'repl',
+  'inspector',
+  'worker_threads',
+]);
+
 module.exports = {
+  evalCompiledScript,
+  evalCompiledInline,
+  evalCompiledWithOptions,
+  FROZEN_BLOCKED,
   BLOCKED_MODULES,
   denyRequire,
   forbiddenSpecifiers,
