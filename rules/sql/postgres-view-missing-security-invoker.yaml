@@ -1,0 +1,90 @@
+rules:
+  - id: postgres-view-missing-security-invoker
+    languages: [generic]
+    severity: ERROR
+    options:
+      generic_comment_style: c
+    paths:
+      include:
+        - "*.sql"
+        - "*.psql"
+        - "*.pgsql"
+    message: >-
+      This view is created without `WITH (security_invoker = on)`. A Postgres view
+      executes with the privileges of its *owner*, not of the caller, and row-level
+      security policies on the underlying tables are evaluated against that owner.
+      The owner is usually the migration role, which is RLS-exempt, so the view
+      hands every row of the base table to every caller and silently bypasses every
+      policy you wrote. On PostgREST or Supabase this is directly reachable, because
+      a view in an exposed schema becomes a queryable REST collection. Add
+      `WITH (security_invoker = on)` so policies are evaluated as the querying role
+      (Postgres 15+), and re-check the view after every `CREATE OR REPLACE`, which
+      does not preserve options you forget to restate.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-863: Incorrect Authorization"
+      confidence: MEDIUM
+      impact: HIGH
+      likelihood: HIGH
+      subcategory:
+        - vuln
+      technology:
+        - postgres
+        - sql
+        - supabase
+        - postgrest
+      references:
+        - https://cwe.mitre.org/data/definitions/863.html
+        - https://www.postgresql.org/docs/current/sql-createview.html
+        - https://supabase.com/docs/guides/database/postgres/row-level-security
+    patterns:
+      - pattern-regex: (?is)\bcreate\s+(?:or\s+replace\s+)?(?:temp(?:orary)?\s+)?(?:recursive\s+)?view\s+(?:if\s+not\s+exists\s+)?[^;]*?\bas\b
+      - pattern-not-regex: (?i)security_invoker
+
+  - id: postgres-security-definer-function-in-public-schema
+    languages: [generic]
+    severity: WARNING
+    options:
+      generic_comment_style: c
+    paths:
+      include:
+        - "*.sql"
+        - "*.psql"
+        - "*.pgsql"
+    message: >-
+      This `SECURITY DEFINER` function is created in the `public` schema. The
+      function body runs with the owner's privileges and is RLS-exempt, and
+      PostgREST publishes every routine in an exposed schema as a callable
+      `POST /rpc/<name>` endpoint, so an anonymous caller can invoke it and inherit
+      the owner's access to whatever it touches. Either make the function
+      `SECURITY INVOKER` (the default) so the caller's policies apply, or move it
+      into a schema that is not exposed over the API and call it from a thin
+      invoker-rights wrapper. Whichever you choose, pin `SET search_path = ''` on the
+      definition and fully qualify every object the body references, so the function
+      cannot be redirected by a caller-controlled search path.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-269: Improper Privilege Management"
+      confidence: MEDIUM
+      impact: HIGH
+      likelihood: MEDIUM
+      subcategory:
+        - audit
+      technology:
+        - postgres
+        - sql
+        - supabase
+        - postgrest
+      references:
+        - https://cwe.mitre.org/data/definitions/269.html
+        - https://www.postgresql.org/docs/current/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY
+        - https://docs.postgrest.org/en/stable/references/api/functions.html
+    patterns:
+      - pattern-either:
+          # Explicitly created in `public`.
+          - pattern-regex: (?is)\bcreate\s+(?:or\s+replace\s+)?function\s+public\s*\.(?:(?!\bcreate\s+(?:or\s+replace\s+)?function\b)[\s\S])*?\bsecurity\s+definer\b
+          # Unqualified, so it lands in the first schema on the search path,
+          # which on Supabase and most PostgREST deployments is `public`.
+          - pattern-regex: (?is)\bcreate\s+(?:or\s+replace\s+)?function\s+(?![\w"]+\s*\.)[\w"]+\s*\((?:(?!\bcreate\s+(?:or\s+replace\s+)?function\b)[\s\S])*?\bsecurity\s+definer\b
