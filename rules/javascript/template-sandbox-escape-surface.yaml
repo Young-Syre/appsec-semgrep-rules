@@ -1,0 +1,77 @@
+rules:
+  - id: template-context-exposes-host-capability
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      A host capability object is being handed to a server-side template context.
+      Template engines treat every value in the context as reachable from template
+      source, and their sandboxes restrict what the *template language* can do, not
+      what an exposed object can do once reached. One reference to `require`,
+      `process`, `global`, `module`, `Function` or any object's `constructor` is
+      enough to walk back out to the host realm: `constructor.constructor("…")()`
+      reconstructs `Function`, and `process.mainModule.require` reconstructs the
+      loader. If any part of the template source is user-controlled this is remote
+      code execution; if only the data is, it is still a read primitive over the
+      process. Pass plain serialisable data into the context and resolve anything
+      that needs host access before rendering.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-1336: Improper Neutralization of Special Elements Used in a Template Engine"
+      confidence: HIGH
+      impact: HIGH
+      likelihood: LOW
+      subcategory:
+        - audit
+      technology:
+        - javascript
+        - typescript
+        - nodejs
+        - express
+        - nunjucks
+        - handlebars
+        - ejs
+      references:
+        - https://cwe.mitre.org/data/definitions/1336.html
+        - https://portswigger.net/research/server-side-template-injection
+        - https://portswigger.net/web-security/server-side-template-injection
+      note: >-
+        Narrow by design. The rule fires only on values that are themselves host
+        capabilities, never on a value whose name merely suggests a helper. A
+        context entry such as `{ utils: utils }` is the same bug class whenever
+        `utils` reaches anything privileged, but from a single call site a
+        privileged bean is indistinguishable from a date formatter, so hand-written
+        helper objects passed into template contexts need a human pass.
+    patterns:
+      - pattern-either:
+          - pattern: "$T.render($TMPL, {..., $K: $V, ...}, ...)"
+          - pattern: "$T.renderString($TMPL, {..., $K: $V, ...}, ...)"
+          - pattern: "$T.renderFile($TMPL, {..., $K: $V, ...}, ...)"
+          - pattern: "$T.compile($TMPL)({..., $K: $V, ...}, ...)"
+          - pattern: "$T.template($TMPL)({..., $K: $V, ...}, ...)"
+          - pattern: "$T($TMPL)({..., $K: $V, ...}, ...)"
+          # A template compiled in one statement and invoked in another: the
+          # callee name is constrained, but the real precision comes from the
+          # value check below, which admits only host capabilities.
+          - patterns:
+              - pattern: "$F({..., $K: $V, ...}, ...)"
+              - metavariable-regex:
+                  metavariable: $F
+                  regex: (?i)^.*(template|compiled|render|tmpl|tpl|view)
+      - metavariable-pattern:
+          metavariable: $V
+          pattern-either:
+            - pattern: require
+            - pattern: require($M)
+            - pattern: require($M).$F
+            - pattern: process
+            - pattern: process.$F
+            - pattern: global
+            - pattern: globalThis
+            - pattern: module
+            - pattern: module.$F
+            - pattern: Function
+            - pattern: eval
+            - pattern: $X.constructor
+            - pattern: $X.__proto__
+            - pattern: $X.prototype
