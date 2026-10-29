@@ -40,7 +40,11 @@ rules:
         - https://supabase.com/docs/guides/database/postgres/row-level-security
     patterns:
       - pattern-regex: (?is)\bcreate\s+(?:or\s+replace\s+)?(?:temp(?:orary)?\s+)?(?:recursive\s+)?view\s+(?:if\s+not\s+exists\s+)?[^;]*?\bas\b
-      - pattern-not-regex: (?i)security_invoker
+      # The *value*, not just the option name. Matching the name alone meant a
+      # view explicitly switched to owner rights with `security_invoker = off`
+      # went quiet -- the one case that is a stronger finding than merely
+      # defaulting there.
+      - pattern-not-regex: (?i)security_invoker\s*=\s*(?:on|true|1|yes)\b
 
   - id: postgres-security-definer-function-in-public-schema
     languages: [generic]
@@ -83,8 +87,13 @@ rules:
         - https://docs.postgrest.org/en/stable/references/api/functions.html
     patterns:
       - pattern-either:
-          # Explicitly created in `public`.
-          - pattern-regex: (?is)\bcreate\s+(?:or\s+replace\s+)?function\s+public\s*\.(?:(?!\bcreate\s+(?:or\s+replace\s+)?function\b)[\s\S])*?\bsecurity\s+definer\b
+          # Explicitly created in `public`, quoted or not. pg_dump writes
+          # `"public"."fn"`, and the unqualified branch below excludes it
+          # because its lookahead reads the quoted name as qualified -- so the
+          # spelling a round-tripped migration actually has fell into neither
+          # branch, which is exactly where a forgotten SECURITY DEFINER
+          # survives.
+          - pattern-regex: (?is)\bcreate\s+(?:or\s+replace\s+)?function\s+"?public"?\s*\.(?:(?!\bcreate\s+(?:or\s+replace\s+)?function\b)[\s\S])*?\bsecurity\s+definer\b
           # Unqualified, so it lands in the first schema on the search path,
           # which on Supabase and most PostgREST deployments is `public`.
           - pattern-regex: (?is)\bcreate\s+(?:or\s+replace\s+)?function\s+(?![\w"]+\s*\.)[\w"]+\s*\((?:(?!\bcreate\s+(?:or\s+replace\s+)?function\b)[\s\S])*?\bsecurity\s+definer\b

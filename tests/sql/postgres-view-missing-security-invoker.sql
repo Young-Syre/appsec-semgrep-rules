@@ -46,11 +46,31 @@ create or replace view public.billing_overview_safe
   from public.profiles p;
 
 -- A materialized view cannot have security_invoker at all; it is a stored
--- snapshot and has to be protected by not exposing it.
+-- snapshot and has to be protected by not exposing it. The statement below
+-- used to be a CREATE TABLE, so the `ok` passed because the pattern requires
+-- the token `view` -- not because materialized views are handled.
 -- // ok: postgres-view-missing-security-invoker
 -- // ok: postgres-security-definer-function-in-public-schema
-create table internal.profile_snapshot as
+create materialized view internal.profile_snapshot as
   select id, email from public.profiles;
+
+-- A view explicitly switched to owner rights is a stronger finding than one
+-- that merely defaults there, and it is the case the rule used to go quiet on:
+-- the exclusion matched the option name rather than its value.
+-- // ruleid: postgres-view-missing-security-invoker
+create view public.billing_overview_legacy
+  with (security_invoker = off) as
+  select p.id, p.email, p.billing_customer_id
+  from public.profiles p;
+
+-- pg_dump writes the schema and the function name quoted. The qualified branch
+-- required the bare token `public`, and the unqualified branch's lookahead read
+-- the quoted name as already qualified, so this spelling fell into neither.
+-- // ruleid: postgres-security-definer-function-in-public-schema
+CREATE OR REPLACE FUNCTION "public"."elevate_role"(target uuid)
+  RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
+  update public.profiles set role = 'admin' where id = target;
+$$;
 
 -- Reachable over PostgREST as POST /rpc/promote_user, running as the owner.
 -- // ruleid: postgres-security-definer-function-in-public-schema
