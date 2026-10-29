@@ -34,21 +34,38 @@ rules:
           - pattern: addEventListener("message", $F, ...)
           - pattern: $W.onmessage = $F
           - pattern: onmessage = $F
+      # The handler shape, binding the event parameter so the origin check can
+      # be looked for structurally. A `metavariable-regex` for `.origin` ran
+      # over $F's raw source text, comments included, so
+      # `// TODO: validate event.origin` suppressed the finding entirely.
       - metavariable-pattern:
           metavariable: $F
-          pattern-either:
-            - pattern: function (...) { ... }
-            - pattern: function $N(...) { ... }
-            - pattern: (...) => { ... }
-            - pattern: async function (...) { ... }
-            - pattern: async function $N(...) { ... }
-            - pattern: async (...) => { ... }
+          patterns:
+            - pattern-either:
+                - pattern: ($E, ...) => { ... }
+                - pattern: async ($E, ...) => { ... }
+                - pattern: function ($E, ...) { ... }
+                - pattern: function $N($E, ...) { ... }
+                - pattern: async function ($E, ...) { ... }
+                - pattern: async function $N($E, ...) { ... }
+            # An `if` on the event's origin -- the early-return guard, in any
+            # of its spellings -- is what a real check looks like. A check
+            # written some other way (a boolean assigned first, a helper
+            # called) is not recognised and the handler is still reported;
+            # that direction is a false positive a reader can dismiss, not a
+            # missed handler.
+            - pattern-not: ($E, ...) => { ... if (<... $E.origin ...>) { ... } ... }
+            - pattern-not: async ($E, ...) => { ... if (<... $E.origin ...>) { ... } ... }
+            - pattern-not: function ($E, ...) { ... if (<... $E.origin ...>) { ... } ... }
+            - pattern-not: function $N($E, ...) { ... if (<... $E.origin ...>) { ... } ... }
+            - pattern-not: async function ($E, ...) { ... if (<... $E.origin ...>) { ... } ... }
+            - pattern-not: async function $N($E, ...) { ... if (<... $E.origin ...>) { ... } ... }
+      # Reads the event's data, either as a member access or by destructuring.
+      # The old regex required a literal `.data`, so
+      # `const { data } = event; render(data.html)` was missed.
       - metavariable-regex:
           metavariable: $F
-          regex: (?s)^.*\.data.*$
-      - metavariable-regex:
-          metavariable: $F
-          regex: (?s)^(?!.*\.origin).*$
+          regex: (?s)^.*(?:\.data|\{[^}]*\bdata\b[^}]*\}\s*=).*$
 
   - id: postmessage-wildcard-target-origin
     languages: [javascript, typescript]
@@ -81,6 +98,19 @@ rules:
       - pattern-either:
           - pattern: $W.postMessage($DATA, "*", ...)
           - pattern: postMessage($DATA, "*", ...)
+      # Exclude a literal payload structurally rather than by its first
+      # character. The old regex rejected anything *starting with* a quote or
+      # a backtick, which is what `'token=' + sessionToken` and
+      # `` `${sessionToken}` `` start with -- the two most common computed
+      # forms, and the archetype of what this rule's own message describes.
+      #
+      # `"..."` matches a string literal and a template literal with no
+      # substitution, and does not match one with `${}`, so these two
+      # exclusions keep every genuinely constant payload out and let every
+      # interpolated or concatenated one through. The remaining regex excludes
+      # numeric and keyword constants, which are not strings.
+      - pattern-not: $W.postMessage("...", "*", ...)
+      - pattern-not: postMessage("...", "*", ...)
       - metavariable-regex:
           metavariable: $DATA
-          regex: '(?s)^(?![''"`]|[0-9]|true\b|false\b|null\b|undefined\b).*$'
+          regex: '^(?!(?:[0-9][0-9A-Za-z_.]*|true|false|null|undefined)$)'

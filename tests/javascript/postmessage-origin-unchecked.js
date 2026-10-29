@@ -67,5 +67,55 @@ function pingParent() {
   window.parent.postMessage('iframe-ready', '*');
 }
 
+// A comment naming the field is not a check. The origin test used to run over
+// the handler's raw source text, so this suppressed the finding entirely.
+function registerWithAToDo() {
+  // ruleid: postmessage-handler-missing-origin-check
+  window.addEventListener('message', (event) => {
+    // TODO: validate event.origin before shipping
+    applyTheme(event.data.theme);
+  });
+}
+
+// Destructuring reads the data without the characters `.data` appearing.
+function registerWithDestructuring() {
+  // ruleid: postmessage-handler-missing-origin-check
+  window.addEventListener('message', (event) => {
+    const { data } = event;
+    applyTheme(data.theme);
+  });
+}
+
+function sendConcatenatedToken(frame, session) {
+  // A concatenation is computed even though both halves are literals, and the
+  // old payload test rejected anything starting with a quote.
+  // ruleid: postmessage-wildcard-target-origin
+  frame.contentWindow.postMessage('token=' + session.accessToken, '*');
+}
+
+function sendInterpolatedToken(frame, session) {
+  // ruleid: postmessage-wildcard-target-origin
+  frame.contentWindow.postMessage(`${session.accessToken}`, '*');
+}
+
+function sendInterpolatedHeader(frame, session) {
+  // ruleid: postmessage-wildcard-target-origin
+  frame.contentWindow.postMessage(`Bearer ${session.accessToken}`, '*');
+}
+
+function pingParentWithTemplate() {
+  // A template literal with nothing interpolated is still a constant.
+  // ok: postmessage-wildcard-target-origin
+  window.parent.postMessage(`iframe-ready`, '*');
+}
+
+function reportReady() {
+  // A numeric constant carries nothing. (A ternary over one would be computed,
+  // and is reported -- the rule is about whether the payload is a constant,
+  // not about what type it is.)
+  // ok: postmessage-wildcard-target-origin
+  window.parent.postMessage(1, '*');
+}
+
 function applyTheme() {}
 function bumpMessageCounter() {}
