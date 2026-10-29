@@ -1,0 +1,86 @@
+rules:
+  - id: postmessage-handler-missing-origin-check
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >-
+      This `message` handler reads `event.data` without ever looking at
+      `event.origin`. Any page in any tab can open or reference this window and
+      call `postMessage` on it, so without an origin comparison the handler treats
+      a hostile document's payload as if it came from the application. Compare
+      `event.origin` against an explicit allowlist of exact origins before touching
+      `event.data`, and return early when it does not match. String operations such
+      as `startsWith` or `indexOf` on the origin are not sufficient — an attacker
+      registers `https://example.com.evil.net` and passes a prefix test.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-346: Origin Validation Error"
+      confidence: MEDIUM
+      impact: MEDIUM
+      likelihood: HIGH
+      subcategory:
+        - vuln
+      technology:
+        - javascript
+        - typescript
+        - browser
+      references:
+        - https://cwe.mitre.org/data/definitions/346.html
+        - https://developer.mozilla.org/en-US/docs/Web/API/Window/message_event
+        - https://owasp.org/www-community/attacks/Cross_Site_Scripting_Flaw
+    patterns:
+      - pattern-either:
+          - pattern: $W.addEventListener("message", $F, ...)
+          - pattern: addEventListener("message", $F, ...)
+          - pattern: $W.onmessage = $F
+          - pattern: onmessage = $F
+      - metavariable-pattern:
+          metavariable: $F
+          pattern-either:
+            - pattern: function (...) { ... }
+            - pattern: function $N(...) { ... }
+            - pattern: (...) => { ... }
+            - pattern: async function (...) { ... }
+            - pattern: async function $N(...) { ... }
+            - pattern: async (...) => { ... }
+      - metavariable-regex:
+          metavariable: $F
+          regex: (?s)^.*\.data.*$
+      - metavariable-regex:
+          metavariable: $F
+          regex: (?s)^(?!.*\.origin).*$
+
+  - id: postmessage-wildcard-target-origin
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >-
+      `postMessage` with a `"*"` target origin delivers the payload to whatever
+      document currently occupies the target window, which the receiver controls by
+      navigating itself. Because the payload here is a computed value rather than a
+      constant, it may carry a session token, a one-time code or user data, and
+      that data leaks to the attacker's origin. Pass the exact expected origin as
+      the second argument so the browser drops the message when the target has
+      navigated elsewhere.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-1385: Missing Origin Validation in WebSockets and postMessage"
+      confidence: MEDIUM
+      impact: MEDIUM
+      likelihood: MEDIUM
+      subcategory:
+        - vuln
+      technology:
+        - javascript
+        - typescript
+        - browser
+      references:
+        - https://cwe.mitre.org/data/definitions/1385.html
+        - https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage#security_concerns
+    patterns:
+      - pattern-either:
+          - pattern: $W.postMessage($DATA, "*", ...)
+          - pattern: postMessage($DATA, "*", ...)
+      - metavariable-regex:
+          metavariable: $DATA
+          regex: '(?s)^(?![''"`]|[0-9]|true\b|false\b|null\b|undefined\b).*$'
